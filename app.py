@@ -15,6 +15,7 @@ st.markdown(
 
 @st.cache_data
 def load_data(file):
+    # parse_dates ensures date columns are proper datetimes
     df = pd.read_csv(file, parse_dates=["order_date", "ship_date", "delivery_date"])
     return df
 
@@ -51,7 +52,7 @@ def charts_section(df):
 
     st.subheader("📈 Time Series & Performance")
 
-    # Orders over time
+    # Orders & revenue over time
     orders_by_date = (
         df.groupby("order_date")
         .agg(
@@ -173,31 +174,45 @@ def sidebar_filters(df):
         default=sorted(df["product_category"].unique())
     )
 
-    min_date = df["order_date"].min()
-    max_date = df["order_date"].max()
+    # Ensure min/max as Python date objects for the widget
+    min_date = df["order_date"].min().date()
+    max_date = df["order_date"].max().date()
 
+    # Streamlit returns a tuple for a range, or a single date if user selects one
     date_range = st.sidebar.date_input(
         "Order Date Range",
-        [min_date, max_date]
+        (min_date, max_date)
     )
 
-    if isinstance(date_range, list) and len(date_range) == 2:
-        start_date, end_date = date_range
+    # Normalize widget output: support single date or range
+    if isinstance(date_range, (list, tuple)):
+        if len(date_range) == 2:
+            start_date, end_date = date_range
+        elif len(date_range) == 1:
+            start_date = end_date = date_range[0]
+        else:
+            start_date, end_date = min_date, max_date
     else:
-        start_date, end_date = min_date, max_date
+        # Single date
+        start_date = end_date = date_range
 
+    # Convert to Timestamps for comparison with df["order_date"]
+    start_ts = pd.to_datetime(start_date)
+    end_ts = pd.to_datetime(end_date)
+
+    # Build filter mask
     mask = (
         df["region"].isin(regions) &
         df["warehouse_id"].isin(warehouses) &
         df["product_category"].isin(categories) &
-        (df["order_date"].dt.date >= start_date) &
-        (df["order_date"].dt.date <= end_date)
+        (df["order_date"] >= start_ts) &
+        (df["order_date"] <= end_ts)
     )
 
     return df.loc[mask].copy()
 
 
-# --------- MAIN APP LOGIC ---------
+# ---------------- MAIN APP LOGIC ----------------
 
 uploaded_file = st.file_uploader("Upload Supply Chain CSV File", type=["csv"])
 
